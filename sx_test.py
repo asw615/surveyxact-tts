@@ -1,5 +1,4 @@
 import os
-import re
 import json
 import subprocess
 import pyperclip
@@ -8,8 +7,14 @@ import customtkinter as ctk
 from tkinter import filedialog, messagebox
 from bs4 import BeautifulSoup
 
+# Use the external "regex" library for \p{L} support
+import regex  # pip install regex
+
+
 # -------------------------------------------------------------------------
-# 1) HTML TEMPLATE with unified cleanup in front-end
+# 1) HTML TEMPLATE
+#    We define a <script> block that does the same letter-only approach
+#    in JavaScript, so front-end keys match exactly the Python side.
 # -------------------------------------------------------------------------
 HTML_TEMPLATE = r"""</style>
 </head>
@@ -42,14 +47,14 @@ HTML_TEMPLATE = r"""</style>
   <script>
   document.addEventListener('DOMContentLoaded', async function() {
     // ----------------------------------------------------------------------
-    // 1) Fetch the single TTS mapping (keys for both da, en, etc.)
+    // 1) Fetch the TTS mapping
     // ----------------------------------------------------------------------
     const TTS_MAPPING_URL = "PLACEHOLDER_FOR_TTS_MAPPING_URL";
     let ttsMapping = {};
     try {
       const response = await fetch(TTS_MAPPING_URL);
       ttsMapping = await response.json();
-      console.log("Single TTS Mapping loaded:", ttsMapping);
+      console.log("Letter-only TTS Mapping loaded:", ttsMapping);
     } catch (error) {
       console.error("Failed to load TTS mapping:", error);
     }
@@ -73,31 +78,34 @@ HTML_TEMPLATE = r"""</style>
     }
 
     // ----------------------------------------------------------------------
-    // 3) Cleanup text (mirror Python's function)
+    // 3) Letter-only cleanup function
+    //    We remove all chars except letters, using \p{L} with the 'u' flag.
     // ----------------------------------------------------------------------
-    function cleanupText(rawText) {
-      return rawText
-        .replace(/\u00a0/g, " ") // convert non-breaking space
-        .replace(/\s+/g, " ")    // collapse multiple spaces / newlines
-        .trim();                 // remove leading/trailing
+    function letterOnlyKey(rawText) {
+      let s = rawText.toLowerCase();
+      // Strip out anything not a letter
+      s = s.replace(/[^\p{L}]/gu, "");
+      return s;
     }
 
     // ----------------------------------------------------------------------
-    // 4) Function to play TTS from the single mapping
+    // 4) Function to play TTS
     // ----------------------------------------------------------------------
     function playTTS(rawText, iconElem) {
       if (!ttsMapping) {
-        console.warn("ttsMapping is not loaded or empty.");
+        console.warn("ttsMapping is empty or not loaded.");
         return;
       }
-      const text = cleanupText(rawText);
-      if (ttsMapping[text]) {
-        const audio = new Audio(ttsMapping[text]);
+      // create the "letter-only" key from the DOM text
+      const textKey = letterOnlyKey(rawText);
+
+      if (ttsMapping[textKey]) {
+        const audio = new Audio(ttsMapping[textKey]);
         audio.play();
         startReadingAnimation(iconElem);
         audio.onended = () => stopReadingAnimation(iconElem);
       } else {
-        console.warn(`No TTS audio found for text: "${text}" (raw: "${rawText}")`);
+        console.warn(`No TTS audio found for letterOnlyKey: "${textKey}" (raw: "${rawText}")`);
       }
     }
 
@@ -127,7 +135,7 @@ HTML_TEMPLATE = r"""</style>
     }
 
     // ----------------------------------------------------------------------
-    // 8) Insert speaker icons, skipping battery radio/checkbox
+    // 8) Insert speaker icons
     // ----------------------------------------------------------------------
     targetClasses.forEach(cls => {
       const elems = questionsContainer.getElementsByClassName(cls);
@@ -136,20 +144,16 @@ HTML_TEMPLATE = r"""</style>
         if (!elem.id) {
           elem.id = "elem_" + Math.random().toString(36).substr(2, 9);
         }
-
         // If the element is inside .battery-grid AND has <input> or <label>, skip
         const inBattery = !!elem.closest(".battery-grid");
         if (inBattery && (elem.querySelector("input") || elem.querySelector("label"))) {
           return;
         }
-
-        // Check if inside a <td>
         const inTableCell = !!elem.closest("td");
 
-        // A) If "closed-vertical-choice" ...
+        // A) If "closed-vertical-choice" and <label>
         if (cls === "closed-vertical-choice") {
           if (elem.tagName.toLowerCase() === "label") {
-            // Keep label + icon inline
             elem.style.display = "inline-flex";
             elem.style.alignItems = "center";
 
@@ -175,7 +179,7 @@ HTML_TEMPLATE = r"""</style>
             elem.classList.add("audio-icon-added");
 
           } else {
-            // If it's not a <label>, wrap in a <span>
+            // B) closed-vertical-choice but not a <label> => wrap
             const wrapper = document.createElement("span");
             wrapper.style.display = "inline-flex";
             wrapper.style.alignItems = "center";
@@ -203,9 +207,8 @@ HTML_TEMPLATE = r"""</style>
             wrapper.insertAdjacentHTML("afterend", "<br>");
             elem.classList.add("audio-icon-added");
           }
-
-        // B) Not in a table cell
         } else if (!inTableCell) {
+          // C) not in a table cell => wrap in a div
           const wrapper = document.createElement("div");
           wrapper.style.display = "inline-flex";
           wrapper.style.alignItems = "center";
@@ -232,8 +235,8 @@ HTML_TEMPLATE = r"""</style>
           wrapper.appendChild(icon);
           elem.classList.add("audio-icon-added");
 
-        // C) Inside a table cell
         } else {
+          // D) in a table cell => just append
           const icon = document.createElement("img");
           icon.src = SPEAKER_ICON_URL;
           icon.alt = "Speaker";
@@ -262,18 +265,19 @@ HTML_TEMPLATE = r"""</style>
 </html>
 """
 
+
 # -------------------------------------------------------------------------
-# 2) MAIN APP CLASS
+# 2) MAIN APP
 # -------------------------------------------------------------------------
 class TTSApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("SurveyXact TTS Generator (Bulletproofed)")
+        self.title("SurveyXact TTS Generator — Letters-only Matching")
 
-        # Set up a nice window size/theme
+        # Window sizing + theme
         self.geometry("800x650")
         ctk.set_appearance_mode("System")       # or "Dark"/"Light"
-        ctk.set_default_color_theme("dark-blue")  # "blue", "green", "dark-blue"
+        ctk.set_default_color_theme("dark-blue")  # or "blue"/"green"
 
         # Main frame
         self.main_frame = ctk.CTkFrame(self, corner_radius=12)
@@ -282,8 +286,8 @@ class TTSApp(ctk.CTk):
         # Header label
         self.header_label = ctk.CTkLabel(
             self.main_frame,
-            text="SurveyXact TTS Generator",
-            font=ctk.CTkFont(size=24, weight="bold")
+            text="SurveyXact TTS Generator (Letters-only Matching)",
+            font=ctk.CTkFont(size=20, weight="bold")
         )
         self.header_label.grid(row=0, column=0, columnspan=3, padx=10, pady=(10, 5))
 
@@ -302,7 +306,7 @@ class TTSApp(ctk.CTk):
         self.excel_path_entry.grid(row=2, column=1, padx=5, pady=10, sticky="w")
 
         self.excel_browse_button = ctk.CTkButton(
-            self.main_frame,
+            self.main_frame, 
             text="Browse...",
             command=self.browse_excel
         )
@@ -339,7 +343,7 @@ class TTSApp(ctk.CTk):
         self.status_label = ctk.CTkLabel(self.main_frame, text="", text_color="gray")
         self.status_label.grid(row=6, column=0, columnspan=3, padx=20, pady=10, sticky="w")
 
-        # Let the middle row & column expand
+        # Let the middle row expand
         self.main_frame.rowconfigure(5, weight=1)
         self.main_frame.columnconfigure(1, weight=1)
 
@@ -353,9 +357,6 @@ class TTSApp(ctk.CTk):
             "en": os.path.expanduser("~/piper_models/en_US/en_US-hfc_female-medium.onnx.json")
         }
 
-    # ---------------------------------------------------------------------
-    # 2.1) BROWSE EXCEL
-    # ---------------------------------------------------------------------
     def browse_excel(self):
         """Open file dialog to pick the Excel file."""
         file_path = filedialog.askopenfilename(
@@ -368,11 +369,8 @@ class TTSApp(ctk.CTk):
             self.excel_path_entry.insert(0, file_path)
             self.excel_path_entry.configure(state="disabled")
 
-    # ---------------------------------------------------------------------
-    # 2.2) RUN TTS
-    # ---------------------------------------------------------------------
     def run_tts(self):
-        """Main function to run TTS generation logic (bulletproof cleanup)."""
+        """Generate TTS and store letter-only keys in the JSON mapping."""
         survey_id = self.survey_id_entry.get().strip()
         excel_file = self.excel_path_entry.get().strip()
 
@@ -390,99 +388,107 @@ class TTSApp(ctk.CTk):
             messagebox.showerror("Error", f"Failed to read Excel file:\n{e}")
             return
 
-        # 2) Prepare output dirs
+        # 2) Prepare output
         output_base = "TTS_outputs"
         os.makedirs(output_base, exist_ok=True)
 
         hosting_base = f"docs/{survey_id}"
         os.makedirs(hosting_base, exist_ok=True)
 
-        # 3) Our text->url dictionary
         tts_mapping = {}
 
-        # 4) Unified cleanup function (exactly like the front-end)
-        def cleanup_text_for_key(raw):
-            # 1) Non-breaking spaces -> normal
-            text = raw.replace("\u00a0", " ")
-            # 2) Collapse all whitespace (including \n) to one space
+        # 3) We'll define two text transformations:
+        #    A) text_for_tts: the "original" text with normal spacing for Piper
+        #    B) letter_key: the "stripped" version used as the JSON key
+
+        def cleanup_for_tts(raw):
+            """Basic cleanup for the text read by Piper (strip or unify spaces)."""
+            # Remove HTML tags
+            text = BeautifulSoup(raw, "html.parser").get_text()
+            # Replace non-breaking spaces
+            text = text.replace("\u00a0", " ")
+            # Collapse multiple spaces (including newlines)
+            import re
             text = re.sub(r"\s+", " ", text)
-            # 3) Trim
             return text.strip()
 
-        # 5) Generate TTS for each language
+        def letter_only_key(raw):
+            """Remove all non-letter chars, and lowercase the rest (using 'regex' library)."""
+            s = raw.lower()
+            # \p{L} => any Unicode letter
+            s = regex.sub(r'[^\p{L}]', '', s)
+            return s
+
+        # 4) Generate TTS
         try:
             for lang, model_path in self.language_models.items():
                 if lang not in df.columns:
-                    # If your Excel doesn't have this column, skip
-                    continue
+                    continue  # skip if that column doesn't exist
 
                 lang_folder = os.path.join(output_base, lang)
                 os.makedirs(lang_folder, exist_ok=True)
 
-                # Iterate each row in that language column
-                for i, text in enumerate(df[lang].dropna()):
-                    # Convert any HTML to plain text (in case there's <br>)
-                    cleaned_html = BeautifulSoup(text, "html.parser").get_text()
+                for i, raw_text in enumerate(df[lang].dropna()):
+                    # A) text we pass to Piper
+                    text_for_tts = cleanup_for_tts(raw_text)
 
-                    # Now unify spacing
-                    final_text_key = cleanup_text_for_key(cleaned_html)
+                    # B) letter-only key for the dictionary
+                    key = letter_only_key(text_for_tts)
 
                     file_name = f"output_{i}.wav"
                     file_path = os.path.join(lang_folder, file_name)
                     hosted_url = f"https://asw615.github.io/surveyxact-tts/{survey_id}/{lang}/{file_name}"
 
-                    # Piper command
+                    # Piper call
                     cmd = [
                         "/opt/anaconda3/bin/piper",
                         "--model", model_path,
                         "--config", self.config_files[lang],
                         "--output_file", file_path
                     ]
-                    subprocess.run(cmd, input=final_text_key, text=True, check=True)
+                    subprocess.run(cmd, input=text_for_tts, text=True, check=True)
 
-                    # Move WAV to hosting folder
+                    # Move wav to hosting folder
                     lang_hosting_folder = os.path.join(hosting_base, lang)
                     os.makedirs(lang_hosting_folder, exist_ok=True)
                     final_host_path = os.path.join(lang_hosting_folder, file_name)
                     os.rename(file_path, final_host_path)
 
-                    # Store mapping
-                    tts_mapping[final_text_key] = hosted_url
+                    # Store the letter-only key => URL
+                    tts_mapping[key] = hosted_url
 
         except Exception as e:
             messagebox.showerror("Error", f"TTS generation failed:\n{e}")
             return
 
-        # 6) Save mapping.json
+        # 5) Save the mapping
         mapping_json_path = os.path.join(hosting_base, "tts_mapping.json")
         with open(mapping_json_path, "w", encoding="utf-8") as json_file:
             json.dump(tts_mapping, json_file, indent=4, ensure_ascii=False)
 
-        # 7) Prepare final HTML snippet
+        # 6) Prepare the final HTML snippet
         tts_url = f"https://asw615.github.io/surveyxact-tts/{survey_id}/tts_mapping.json"
         updated_html = HTML_TEMPLATE.replace("PLACEHOLDER_FOR_TTS_MAPPING_URL", tts_url)
 
-        # 8) Display snippet
+        # 7) Display snippet
         self.html_textbox.delete("0.0", "end")
         self.html_textbox.insert("0.0", updated_html)
 
-        # 9) Status
+        # 8) Status
         self.status_label.configure(
             text=f"TTS Complete! Mapping saved to {mapping_json_path}",
             text_color="green"
         )
 
-    # ---------------------------------------------------------------------
-    # 2.3) COPY HTML
-    # ---------------------------------------------------------------------
     def copy_html(self):
-        """Copy the HTML snippet from the text box to clipboard."""
+        """Copy the HTML snippet to the clipboard."""
         html_code = self.html_textbox.get("0.0", "end")
         pyperclip.copy(html_code)
         self.status_label.configure(
             text="HTML code copied to clipboard!",
             text_color="blue"
         )
+
 
 # -------------------------------------------------------------------------
 # 3) MAIN RUNNER
