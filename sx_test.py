@@ -9,9 +9,7 @@ from tkinter import filedialog, messagebox
 from bs4 import BeautifulSoup
 
 # -------------------------------------------------------------------------
-# 1) HTML TEMPLATE
-#    Notice we have a placeholder "PLACEHOLDER_FOR_TTS_MAPPING_URL"
-#    which we'll replace with the correct URL referencing your SurveyID.
+# 1) HTML TEMPLATE with unified cleanup in front-end
 # -------------------------------------------------------------------------
 HTML_TEMPLATE = r"""</style>
 </head>
@@ -75,14 +73,13 @@ HTML_TEMPLATE = r"""</style>
     }
 
     // ----------------------------------------------------------------------
-    // 3) Cleanup text to avoid invisible chars or double spaces
+    // 3) Cleanup text (mirror Python's function)
     // ----------------------------------------------------------------------
     function cleanupText(rawText) {
-      // Mirror the logic used in Python
       return rawText
-        .replace(/\u00a0/g, " ") // non-breaking space -> normal space
-        .replace(/\s+/g, " ")    // collapse multiple spaces
-        .trim();
+        .replace(/\u00a0/g, " ") // convert non-breaking space
+        .replace(/\s+/g, " ")    // collapse multiple spaces / newlines
+        .trim();                 // remove leading/trailing
     }
 
     // ----------------------------------------------------------------------
@@ -95,7 +92,6 @@ HTML_TEMPLATE = r"""</style>
       }
       const text = cleanupText(rawText);
       if (ttsMapping[text]) {
-        // Found an audio file
         const audio = new Audio(ttsMapping[text]);
         audio.play();
         startReadingAnimation(iconElem);
@@ -136,7 +132,6 @@ HTML_TEMPLATE = r"""</style>
     targetClasses.forEach(cls => {
       const elems = questionsContainer.getElementsByClassName(cls);
       Array.from(elems).forEach(elem => {
-        // Skip if already has an icon
         if (elem.classList.contains("audio-icon-added")) return;
         if (!elem.id) {
           elem.id = "elem_" + Math.random().toString(36).substr(2, 9);
@@ -151,7 +146,7 @@ HTML_TEMPLATE = r"""</style>
         // Check if inside a <td>
         const inTableCell = !!elem.closest("td");
 
-        // A) If "closed-vertical-choice"
+        // A) If "closed-vertical-choice" ...
         if (cls === "closed-vertical-choice") {
           if (elem.tagName.toLowerCase() === "label") {
             // Keep label + icon inline
@@ -180,7 +175,7 @@ HTML_TEMPLATE = r"""</style>
             elem.classList.add("audio-icon-added");
 
           } else {
-            // If it's not a label, wrap in a span
+            // If it's not a <label>, wrap in a <span>
             const wrapper = document.createElement("span");
             wrapper.style.display = "inline-flex";
             wrapper.style.alignItems = "center";
@@ -211,7 +206,6 @@ HTML_TEMPLATE = r"""</style>
 
         // B) Not in a table cell
         } else if (!inTableCell) {
-          // Wrap in a div for inline-flex
           const wrapper = document.createElement("div");
           wrapper.style.display = "inline-flex";
           wrapper.style.alignItems = "center";
@@ -240,7 +234,6 @@ HTML_TEMPLATE = r"""</style>
 
         // C) Inside a table cell
         } else {
-          // Just append the icon
           const icon = document.createElement("img");
           icon.src = SPEAKER_ICON_URL;
           icon.alt = "Speaker";
@@ -270,25 +263,23 @@ HTML_TEMPLATE = r"""</style>
 """
 
 # -------------------------------------------------------------------------
-# 2) MAIN APP CLASS (using CustomTkinter for a nicer interface)
+# 2) MAIN APP CLASS
 # -------------------------------------------------------------------------
 class TTSApp(ctk.CTk):
     def __init__(self):
         super().__init__()
+        self.title("SurveyXact TTS Generator (Bulletproofed)")
 
-        # Window setup
-        self.title("SurveyXact TTS Generator — Unified Cleanup")
+        # Set up a nice window size/theme
         self.geometry("800x650")
-
-        # Optional: set themes
-        ctk.set_appearance_mode("System")       # or "Dark", "Light"
-        ctk.set_default_color_theme("dark-blue")  # or "blue", "green"
+        ctk.set_appearance_mode("System")       # or "Dark"/"Light"
+        ctk.set_default_color_theme("dark-blue")  # "blue", "green", "dark-blue"
 
         # Main frame
         self.main_frame = ctk.CTkFrame(self, corner_radius=12)
         self.main_frame.pack(padx=20, pady=20, fill="both", expand=True)
 
-        # Header
+        # Header label
         self.header_label = ctk.CTkLabel(
             self.main_frame,
             text="SurveyXact TTS Generator",
@@ -299,12 +290,14 @@ class TTSApp(ctk.CTk):
         # Survey ID
         self.survey_id_label = ctk.CTkLabel(self.main_frame, text="Survey ID:")
         self.survey_id_label.grid(row=1, column=0, padx=(20,5), pady=10, sticky="e")
+
         self.survey_id_entry = ctk.CTkEntry(self.main_frame, width=220)
         self.survey_id_entry.grid(row=1, column=1, padx=5, pady=10, sticky="w")
 
-        # Excel path
+        # Excel File
         self.excel_label = ctk.CTkLabel(self.main_frame, text="Excel File:")
         self.excel_label.grid(row=2, column=0, padx=(20,5), pady=10, sticky="e")
+
         self.excel_path_entry = ctk.CTkEntry(self.main_frame, width=220, state="disabled")
         self.excel_path_entry.grid(row=2, column=1, padx=5, pady=10, sticky="w")
 
@@ -346,9 +339,8 @@ class TTSApp(ctk.CTk):
         self.status_label = ctk.CTkLabel(self.main_frame, text="", text_color="gray")
         self.status_label.grid(row=6, column=0, columnspan=3, padx=20, pady=10, sticky="w")
 
-        # Let row 5 expand
+        # Let the middle row & column expand
         self.main_frame.rowconfigure(5, weight=1)
-        # Let column 1 expand
         self.main_frame.columnconfigure(1, weight=1)
 
         # Piper model paths
@@ -361,6 +353,9 @@ class TTSApp(ctk.CTk):
             "en": os.path.expanduser("~/piper_models/en_US/en_US-hfc_female-medium.onnx.json")
         }
 
+    # ---------------------------------------------------------------------
+    # 2.1) BROWSE EXCEL
+    # ---------------------------------------------------------------------
     def browse_excel(self):
         """Open file dialog to pick the Excel file."""
         file_path = filedialog.askopenfilename(
@@ -373,8 +368,11 @@ class TTSApp(ctk.CTk):
             self.excel_path_entry.insert(0, file_path)
             self.excel_path_entry.configure(state="disabled")
 
+    # ---------------------------------------------------------------------
+    # 2.2) RUN TTS
+    # ---------------------------------------------------------------------
     def run_tts(self):
-        """Main function to run TTS generation logic."""
+        """Main function to run TTS generation logic (bulletproof cleanup)."""
         survey_id = self.survey_id_entry.get().strip()
         excel_file = self.excel_path_entry.get().strip()
 
@@ -385,48 +383,49 @@ class TTSApp(ctk.CTk):
             messagebox.showerror("Error", "Please select an Excel file.")
             return
 
-        # 1) Try reading the Excel
+        # 1) Read Excel
         try:
             df = pd.read_excel(excel_file, sheet_name="Translations")
         except Exception as e:
             messagebox.showerror("Error", f"Failed to read Excel file:\n{e}")
             return
 
-        # 2) Prepare output directories
+        # 2) Prepare output dirs
         output_base = "TTS_outputs"
         os.makedirs(output_base, exist_ok=True)
 
         hosting_base = f"docs/{survey_id}"
         os.makedirs(hosting_base, exist_ok=True)
 
-        # 3) Dictionary for text->URL
+        # 3) Our text->url dictionary
         tts_mapping = {}
 
-        # 4) Function: unify text cleanup
+        # 4) Unified cleanup function (exactly like the front-end)
         def cleanup_text_for_key(raw):
-            # (Mimics the front-end's cleanupText())
-            # 1) replace non-breaking space
-            # 2) collapse multiple spaces
-            # 3) trim
+            # 1) Non-breaking spaces -> normal
             text = raw.replace("\u00a0", " ")
+            # 2) Collapse all whitespace (including \n) to one space
             text = re.sub(r"\s+", " ", text)
+            # 3) Trim
             return text.strip()
 
-        # 5) Generate TTS for each language column in your DataFrame
+        # 5) Generate TTS for each language
         try:
             for lang, model_path in self.language_models.items():
                 if lang not in df.columns:
-                    # If your Excel doesn't have that language column, skip
+                    # If your Excel doesn't have this column, skip
                     continue
+
                 lang_folder = os.path.join(output_base, lang)
                 os.makedirs(lang_folder, exist_ok=True)
 
-                # For each text in that column
+                # Iterate each row in that language column
                 for i, text in enumerate(df[lang].dropna()):
-                    # Remove any HTML tags (like <br>), then unify spaces
-                    # (This is optional if your Excel might have HTML fragments)
+                    # Convert any HTML to plain text (in case there's <br>)
                     cleaned_html = BeautifulSoup(text, "html.parser").get_text()
-                    key_for_json = cleanup_text_for_key(cleaned_html)
+
+                    # Now unify spacing
+                    final_text_key = cleanup_text_for_key(cleaned_html)
 
                     file_name = f"output_{i}.wav"
                     file_path = os.path.join(lang_folder, file_name)
@@ -439,16 +438,16 @@ class TTSApp(ctk.CTk):
                         "--config", self.config_files[lang],
                         "--output_file", file_path
                     ]
-                    subprocess.run(cmd, input=key_for_json, text=True, check=True)
+                    subprocess.run(cmd, input=final_text_key, text=True, check=True)
 
-                    # Move to hosting folder
+                    # Move WAV to hosting folder
                     lang_hosting_folder = os.path.join(hosting_base, lang)
                     os.makedirs(lang_hosting_folder, exist_ok=True)
                     final_host_path = os.path.join(lang_hosting_folder, file_name)
                     os.rename(file_path, final_host_path)
 
-                    # Store in mapping
-                    tts_mapping[key_for_json] = hosted_url
+                    # Store mapping
+                    tts_mapping[final_text_key] = hosted_url
 
         except Exception as e:
             messagebox.showerror("Error", f"TTS generation failed:\n{e}")
@@ -459,20 +458,23 @@ class TTSApp(ctk.CTk):
         with open(mapping_json_path, "w", encoding="utf-8") as json_file:
             json.dump(tts_mapping, json_file, indent=4, ensure_ascii=False)
 
-        # 7) Generate final HTML snippet
+        # 7) Prepare final HTML snippet
         tts_url = f"https://asw615.github.io/surveyxact-tts/{survey_id}/tts_mapping.json"
         updated_html = HTML_TEMPLATE.replace("PLACEHOLDER_FOR_TTS_MAPPING_URL", tts_url)
 
-        # Show snippet
+        # 8) Display snippet
         self.html_textbox.delete("0.0", "end")
         self.html_textbox.insert("0.0", updated_html)
 
-        # Update status
+        # 9) Status
         self.status_label.configure(
             text=f"TTS Complete! Mapping saved to {mapping_json_path}",
             text_color="green"
         )
 
+    # ---------------------------------------------------------------------
+    # 2.3) COPY HTML
+    # ---------------------------------------------------------------------
     def copy_html(self):
         """Copy the HTML snippet from the text box to clipboard."""
         html_code = self.html_textbox.get("0.0", "end")
@@ -486,9 +488,5 @@ class TTSApp(ctk.CTk):
 # 3) MAIN RUNNER
 # -------------------------------------------------------------------------
 if __name__ == "__main__":
-    # You can override theme/appearance here if needed
-    # ctk.set_appearance_mode("Dark")
-    # ctk.set_default_color_theme("green")
-
     app = TTSApp()
     app.mainloop()
