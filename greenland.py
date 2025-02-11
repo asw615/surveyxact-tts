@@ -39,7 +39,7 @@ HTML_TEMPLATE = r"""</style>
       50%  { background-size: 20% 100%, 20% 10%,  20% 100% }
       66%  { background-size: 20% 100%, 20% 100%, 20% 10%  }
       100% { background-size: 20% 100%, 20% 100%, 20% 100% }
-    } 
+    } 
   </style>
 
   <script>
@@ -57,8 +57,9 @@ HTML_TEMPLATE = r"""</style>
       console.error("Failed to load TTS mapping:", error);
     }
 
-
-    // 4. Loader animation
+    // ----------------------------------------------------------------------
+    // 2. Loader animation functions
+    // ----------------------------------------------------------------------
     function startReadingAnimation(iconElem) {
       iconElem.style.display = "none";
       const loader = document.createElement("div");
@@ -74,7 +75,9 @@ HTML_TEMPLATE = r"""</style>
       iconElem.style.display = "inline-block";
     }
 
-    // 5. Detect active language
+    // ----------------------------------------------------------------------
+    // 3. Detect active language
+    // ----------------------------------------------------------------------
     let activeLang = "da";
     const langBar = document.querySelector("div.language-bar");
     if (langBar) {
@@ -86,29 +89,46 @@ HTML_TEMPLATE = r"""</style>
     }
     console.log("Active language detected:", activeLang);
 
-    // 6. Combined TTS function
+    // ----------------------------------------------------------------------
+    // 4. Letter-only cleanup with NFC normalization (preserve letters and digits)
+    // ----------------------------------------------------------------------
+    function letterOnlyKey(rawText) {
+      return rawText.normalize("NFC")
+                    .toLowerCase()
+                    .replace(/[^\p{L}\p{N}]/gu, "");
+    }
+
+    // ----------------------------------------------------------------------
+    // 5. Combined TTS function:
+    //     - For Greenlandic ("kl"), use Martha functionality.
+    //     - Otherwise, lookup the mapped audio using the normalized key.
+    // ----------------------------------------------------------------------
     function playTTS(text, iconElem, lang, elem) {
       if (lang === "kl") {
-        // Martha for Greenlandic
         iconElem.className = "martha-button martha-skip";
-        // CRUCIAL: Use the 'elem.id', not parentNode
         iconElem.setAttribute("data-martha-id", elem.id);
         martha.click.call(iconElem, new Event("click"));
-      } else if (ttsMapping[text]) {
-        // da/en -> mapped audio
-        const audio = new Audio(ttsMapping[text]);
-        audio.play();
-        startReadingAnimation(iconElem);
-        audio.onended = () => stopReadingAnimation(iconElem);
       } else {
-        console.warn("No TTS file found for:", text);
+        const key = letterOnlyKey(text);
+        if (ttsMapping[key]) {
+          const audio = new Audio(ttsMapping[key]);
+          audio.play();
+          startReadingAnimation(iconElem);
+          audio.onended = () => stopReadingAnimation(iconElem);
+        } else {
+          console.warn("No TTS file found for:", text);
+        }
       }
     }
 
-    // 7. Speaker icon
+    // ----------------------------------------------------------------------
+    // 6. Speaker icon
+    // ----------------------------------------------------------------------
     const SPEAKER_ICON_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/2/21/Speaker_Icon.svg/480px-Speaker_Icon.svg.png";
 
-    // 8. Classes for icons
+    // ----------------------------------------------------------------------
+    // 7. Classes for icons
+    // ----------------------------------------------------------------------
     const targetClasses = [
       "text-element",
       "question-title",
@@ -117,14 +137,18 @@ HTML_TEMPLATE = r"""</style>
       "battery-grid"
     ];
 
-    // 9. Questions container
+    // ----------------------------------------------------------------------
+    // 8. Questions container
+    // ----------------------------------------------------------------------
     const questionsContainer = document.querySelector("div.questions");
     if (!questionsContainer) {
       console.error("Questions container not found.");
       return;
     }
 
-    // 10. Insert icons
+    // ----------------------------------------------------------------------
+    // 9. Insert icons into target elements
+    // ----------------------------------------------------------------------
     targetClasses.forEach(cls => {
       const elems = questionsContainer.getElementsByClassName(cls);
       Array.from(elems).forEach(function(elem) {
@@ -132,19 +156,13 @@ HTML_TEMPLATE = r"""</style>
         if (!elem.id) {
           elem.id = "elem_" + Math.random().toString(36).substr(2, 9);
         }
-
-        // If in battery-grid AND has an input/label => skip
         const inBattery = !!elem.closest(".battery-grid");
         if (inBattery && (elem.querySelector("input") || elem.querySelector("label"))) {
-          return; // no icon on radio/checkbox items
+          return;
         }
-
-        // Check if inside a <td>
         const inTableCell = !!elem.closest("td");
 
-        // (A) closed-vertical-choice
         if (cls === "closed-vertical-choice") {
-          // If it’s a <label>
           if (elem.tagName.toLowerCase() === "label") {
             elem.style.display = "inline-flex";
             elem.style.alignItems = "center";
@@ -171,7 +189,6 @@ HTML_TEMPLATE = r"""</style>
             elem.classList.add("audio-icon-added");
 
           } else {
-            // Wrap in a span
             const wrapper = document.createElement("span");
             wrapper.style.display = "inline-flex";
             wrapper.style.alignItems = "center";
@@ -199,8 +216,6 @@ HTML_TEMPLATE = r"""</style>
             wrapper.insertAdjacentHTML("afterend", "<br>");
             elem.classList.add("audio-icon-added");
           }
-
-        // (B) Not in a table cell
         } else if (!inTableCell) {
           const wrapper = document.createElement("div");
           wrapper.style.display = "inline-flex";
@@ -227,8 +242,6 @@ HTML_TEMPLATE = r"""</style>
 
           wrapper.appendChild(icon);
           elem.classList.add("audio-icon-added");
-
-        // (C) Inside a table cell
         } else {
           const icon = document.createElement("img");
           icon.src = SPEAKER_ICON_URL;
@@ -415,11 +428,12 @@ class TTSApp(ctk.CTk):
             txt = re.sub(r"\s+", " ", txt)
             return txt.strip()
 
-        # Key function: lowercase and remove non-letter characters (with NFC)
+        # Key function: lowercase and remove non-letter/non-number characters (with NFC)
         def letter_only_key(raw):
             s = unicodedata.normalize("NFC", raw)
             s = s.lower()
-            s = regex.sub(r'[^\p{L}]', '', s)
+            # Updated to keep both letters (\p{L}) and numbers (\p{N})
+            s = regex.sub(r'[^\p{L}\p{N}]', '', s)
             return s
 
         try:
@@ -430,11 +444,9 @@ class TTSApp(ctk.CTk):
                     messagebox.showerror("Error", "Please enter the OpenAI API key.")
                     return
 
-                # Import the OpenAI client and instantiate it with your API key.
                 from openai import OpenAI
                 client = OpenAI(api_key=api_key)
 
-                # Loop through languages (using the keys defined in self.language_models)
                 for lang in self.language_models.keys():
                     if lang not in df.columns:
                         continue
@@ -450,19 +462,12 @@ class TTSApp(ctk.CTk):
                         file_path = os.path.join(lang_folder, file_name)
                         hosted_url = f"https://asw615.github.io/surveyxact-tts/{survey_id}/{lang}/{file_name}"
 
-                        # Call the new OpenAI Audio API.
-                        # Here, we specify:
-                        #   - model: "tts-1"
-                        #   - voice: "alloy" (change if desired)
-                        #   - input: the cleaned text
-                        #   - response_format: "wav" to get WAV files.
                         response = client.audio.speech.create(
                             model="tts-1",
                             voice="alloy",
                             input=text_for_tts,
                             response_format="wav"
                         )
-                        # Stream the generated audio to file.
                         response.stream_to_file(file_path)
 
                         lang_hosting_folder = os.path.join(hosting_base, lang)
@@ -473,7 +478,7 @@ class TTSApp(ctk.CTk):
                         tts_mapping[key] = hosted_url
 
             else:
-                # Piper branch (original method)
+                # Piper branch
                 for lang, model_path in self.language_models.items():
                     if lang not in df.columns:
                         continue

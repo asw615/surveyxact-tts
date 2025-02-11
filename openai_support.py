@@ -76,14 +76,15 @@ HTML_TEMPLATE = r"""</style>
     // 3) Letter-only cleanup with NFC normalization
     // ----------------------------------------------------------------------
     function letterOnlyKey(rawText) {
-      // Force NFC normalization
-      let s = rawText.normalize("NFC");
-      // Lowercase
-      s = s.toLowerCase();
-      // Remove everything except letters
-      s = s.replace(/[^\p{L}]/gu, "");
-      return s;
+    // Force NFC normalization
+    let s = rawText.normalize("NFC");
+    // Lowercase
+    s = s.toLowerCase();
+    // Remove everything except letters and digits
+    s = s.replace(/[^\p{L}\p{N}]/gu, "");
+    return s;
     }
+
 
     // ----------------------------------------------------------------------
     // 4) Function to play TTS
@@ -417,8 +418,9 @@ class TTSApp(ctk.CTk):
         def letter_only_key(raw):
             s = unicodedata.normalize("NFC", raw)
             s = s.lower()
-            s = regex.sub(r'[^\p{L}]', '', s)
+            s = regex.sub(r'[^\p{L}\p{N}]', '', s)
             return s
+
 
         try:
             if self.tts_method_var.get() == "openai":
