@@ -7,7 +7,7 @@ from bs4 import BeautifulSoup
 import regex
 import unicodedata
 
-# Define global constants for the TTS models and configs
+# Global constants for the TTS models and configs
 LANGUAGE_MODELS = {
     "da": os.path.expanduser("~/piper_models/da_DK/da_DK-talesyntese-medium.onnx"),
     "en": os.path.expanduser("~/piper_models/en_US/en_US-hfc_female-medium.onnx")
@@ -17,7 +17,7 @@ CONFIG_FILES = {
     "en": os.path.expanduser("~/piper_models/en_US/en_US-hfc_female-medium.onnx.json")
 }
 
-# HTML template that will eventually be inserted in the generated mapping page.
+# HTML template for the mapping page (inserted into the generated snippet)
 HTML_TEMPLATE = r"""</style>
 </head>
 <body>
@@ -48,9 +48,7 @@ HTML_TEMPLATE = r"""</style>
 
   <script>
   document.addEventListener('DOMContentLoaded', async function() {
-    // ----------------------------------------------------------------------
     // 1) Fetch the TTS mapping
-    // ----------------------------------------------------------------------
     const TTS_MAPPING_URL = "PLACEHOLDER_FOR_TTS_MAPPING_URL";
     let ttsMapping = {};
     try {
@@ -61,9 +59,7 @@ HTML_TEMPLATE = r"""</style>
       console.error("Failed to load TTS mapping:", error);
     }
 
-    // ----------------------------------------------------------------------
-    // 2) Loader animation
-    // ----------------------------------------------------------------------
+    // 2) Loader animation functions
     function startReadingAnimation(iconElem) {
       iconElem.style.display = "none";
       const loader = document.createElement("div");
@@ -79,19 +75,14 @@ HTML_TEMPLATE = r"""</style>
       iconElem.style.display = "inline-block";
     }
 
-    // ----------------------------------------------------------------------
-    // 3) Letter-only cleanup with NFC normalization (preserving letters and digits)
-    // ----------------------------------------------------------------------
+    // 3) Letter-only cleanup (preserving letters and digits)
     function letterOnlyKey(rawText) {
       let s = rawText.normalize("NFC").toLowerCase();
-      // Keep Unicode letters and digits
       s = s.replace(/[^\p{L}\p{N}]/gu, "");
       return s;
     }
 
-    // ----------------------------------------------------------------------
-    // 4) Function to play TTS using the mapped audio
-    // ----------------------------------------------------------------------
+    // 4) Play TTS using mapped audio
     function playTTS(rawText, iconElem) {
       if (!ttsMapping) {
         console.warn("ttsMapping is empty or not loaded.");
@@ -104,13 +95,11 @@ HTML_TEMPLATE = r"""</style>
         startReadingAnimation(iconElem);
         audio.onended = () => stopReadingAnimation(iconElem);
       } else {
-        console.warn(`No TTS audio found for letterOnlyKey: "${textKey}" (raw: "${rawText}")`);
+        console.warn(`No TTS audio found for key: "${textKey}" (raw: "${rawText}")`);
       }
     }
 
-    // ----------------------------------------------------------------------
-    // 5) Speaker icon insertion logic (for various target classes)
-    // ----------------------------------------------------------------------
+    // 5) Insert speaker icons into target elements
     const SPEAKER_ICON_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/2/21/Speaker_Icon.svg/480px-Speaker_Icon.svg.png";
     const targetClasses = [
       "text-element",
@@ -233,41 +222,121 @@ HTML_TEMPLATE = r"""</style>
 </html>
 """
 
-# Define the HTML form (a simple template string)
+# HTML form template with enhanced styling, radio buttons, and a loading indicator.
 FORM_TEMPLATE = """
 <!doctype html>
 <html>
   <head>
     <title>SurveyXact TTS Generator</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        background: #f2f2f2;
+      }
+      .container {
+        width: 500px;
+        margin: 50px auto;
+        background: #fff;
+        padding: 20px 30px;
+        border-radius: 8px;
+        box-shadow: 0 0 10px rgba(0,0,0,0.1);
+      }
+      h1 {
+        text-align: center;
+        color: #333;
+      }
+      label {
+        display: block;
+        margin-top: 10px;
+        font-weight: bold;
+      }
+      input[type="text"],
+      input[type="file"] {
+        width: 100%;
+        padding: 8px;
+        margin-top: 5px;
+        margin-bottom: 10px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+      }
+      .radio-group {
+        margin-top: 10px;
+        margin-bottom: 10px;
+      }
+      .radio-group label {
+        display: inline;
+        font-weight: normal;
+        margin-right: 10px;
+      }
+      input[type="submit"] {
+        background: #007BFF;
+        color: white;
+        padding: 10px 15px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      input[type="submit"]:hover {
+        background: #0056b3;
+      }
+      #loading {
+        text-align: center;
+        margin-top: 20px;
+        font-weight: bold;
+        color: #007BFF;
+        display: none;
+      }
+    </style>
   </head>
   <body>
-    <h1>SurveyXact TTS Generator</h1>
-    <form method="post" enctype="multipart/form-data">
-      <label for="survey_id">Survey ID:</label>
-      <input type="text" id="survey_id" name="survey_id" required><br><br>
-      
-      <label for="excel_file">Excel File:</label>
-      <input type="file" id="excel_file" name="excel_file" accept=".xlsx,.xls" required><br><br>
-      
-      <label>TTS Generation Method:</label>
-      <input type="radio" id="piper" name="tts_method" value="piper" checked>
-      <label for="piper">Piper</label>
-      <input type="radio" id="openai" name="tts_method" value="openai">
-      <label for="openai">OpenAI API</label><br><br>
-      
-      <div id="api_key_div" style="display: none;">
-        <label for="api_key">OpenAI API Key:</label>
-        <input type="text" id="api_key" name="api_key"><br><br>
-      </div>
-      
-      <input type="submit" value="Generate TTS">
-    </form>
+    <div class="container">
+      <h1>SurveyXact TTS Generator</h1>
+      <form id="ttsForm" method="post" enctype="multipart/form-data">
+        <label for="survey_id">Survey ID:</label>
+        <input type="text" id="survey_id" name="survey_id" required>
+        
+        <label for="excel_file">Excel File:</label>
+        <input type="file" id="excel_file" name="excel_file" accept=".xlsx,.xls" required>
+        
+        <div class="radio-group">
+          <label>TTS Generation Method:</label><br>
+          <input type="radio" id="piper" name="tts_method" value="piper" checked>
+          <label for="piper">Piper</label>
+          <input type="radio" id="openai" name="tts_method" value="openai">
+          <label for="openai">OpenAI API</label>
+        </div>
+        
+        <div id="api_key_div" style="display: none;">
+          <label for="api_key">OpenAI API Key:</label>
+          <input type="text" id="api_key" name="api_key">
+        </div>
+        
+        <input type="submit" value="Generate TTS">
+      </form>
+      <div id="loading">Generating TTS... please wait.</div>
+    </div>
     <script>
-      document.getElementById('openai').addEventListener('change', function(){
-        document.getElementById('api_key_div').style.display = 'block';
+      // Use a single change handler for all radio buttons.
+      Array.from(document.getElementsByName('tts_method')).forEach(function(radio) {
+        radio.addEventListener('change', function(){
+          if(document.getElementById('openai').checked){
+            document.getElementById('api_key_div').style.display = 'block';
+          } else {
+            document.getElementById('api_key_div').style.display = 'none';
+          }
+        });
       });
-      document.getElementById('piper').addEventListener('change', function(){
-        document.getElementById('api_key_div').style.display = 'none';
+      // Ensure the correct state on page load.
+      window.addEventListener('load', function() {
+        if(document.getElementById('openai').checked){
+          document.getElementById('api_key_div').style.display = 'block';
+        } else {
+          document.getElementById('api_key_div').style.display = 'none';
+        }
+      });
+      // Show the loading message on form submission.
+      document.getElementById('ttsForm').addEventListener('submit', function(){
+        document.getElementById('loading').style.display = 'block';
       });
     </script>
   </body>
@@ -310,7 +379,7 @@ def index():
 
         tts_mapping = {}
 
-        # Cleanup function to get plain text from HTML and normalize
+        # Cleanup function: extract text from HTML and normalize
         def cleanup_for_tts(raw):
             txt = BeautifulSoup(raw, "html.parser").get_text()
             txt = unicodedata.normalize("NFC", txt)
@@ -319,7 +388,7 @@ def index():
             txt = re.sub(r"\s+", " ", txt)
             return txt.strip()
 
-        # Key function: normalize, lowercase, and remove everything except letters and digits
+        # Key function: lowercase and remove non-letter/non-digit characters
         def letter_only_key(raw):
             s = unicodedata.normalize("NFC", raw)
             s = s.lower()
@@ -342,7 +411,6 @@ def index():
                         key = letter_only_key(text_for_tts)
                         file_name = f"output_{i}.wav"
                         file_path = os.path.join(lang_folder, file_name)
-                        # Hosted URL (update this if needed)
                         hosted_url = f"https://asw615.github.io/surveyxact-tts/{survey_id}/{lang}/{file_name}"
                         response = client.audio.speech.create(
                             model="tts-1",
@@ -389,8 +457,6 @@ def index():
         with open(mapping_json_path, "w", encoding="utf-8") as json_file:
             json.dump(tts_mapping, json_file, indent=4, ensure_ascii=False)
 
-        # The mapping URL here is still generated as before;
-        # adjust it as necessary for your hosting environment.
         tts_url = f"https://asw615.github.io/surveyxact-tts/{survey_id}/tts_mapping.json"
         updated_html = HTML_TEMPLATE.replace("PLACEHOLDER_FOR_TTS_MAPPING_URL", tts_url)
 
@@ -399,15 +465,26 @@ def index():
         <html>
           <head>
             <title>TTS Generation Complete</title>
+            <style>
+              body { font-family: Arial, sans-serif; background: #f2f2f2; }
+              .container { width: 600px; margin: 50px auto; background: #fff; padding: 20px 30px;
+                           border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+              h1 { text-align: center; color: #333; }
+              textarea { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; }
+              a { color: #007BFF; text-decoration: none; }
+              a:hover { text-decoration: underline; }
+            </style>
           </head>
           <body>
-            <h1>TTS Generation Complete!</h1>
-            <p>Mapping saved to: {{ mapping_json_path }}</p>
-            <p>Mapping URL: <a href="{{ tts_url }}">{{ tts_url }}</a></p>
-            <h2>Generated HTML Snippet:</h2>
-            <textarea rows="20" cols="100">{{ updated_html }}</textarea>
-            <br><br>
-            <a href="/">Generate another</a>
+            <div class="container">
+              <h1>TTS Generation Complete!</h1>
+              <p>Mapping saved to: {{ mapping_json_path }}</p>
+              <p>Mapping URL: <a href="{{ tts_url }}">{{ tts_url }}</a></p>
+              <h2>Generated HTML Snippet:</h2>
+              <textarea rows="20">{{ updated_html }}</textarea>
+              <br><br>
+              <a href="/">Generate another</a>
+            </div>
           </body>
         </html>
         """
@@ -419,5 +496,4 @@ def index():
         return render_template_string(FORM_TEMPLATE)
 
 if __name__ == "__main__":
-    # Run the Flask app in debug mode (set debug=False in production)
     app.run(debug=True)
