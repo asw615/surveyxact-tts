@@ -1,6 +1,0 @@
-customtkinter
-pandas
-pyperclip
-openpyxl
-beautifulsoup4
-regex
